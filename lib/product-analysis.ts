@@ -8,6 +8,14 @@ import type {
   NormalizedProduct
 } from '@/types/api';
 
+import { 
+  assessAnalysisQuality, 
+  generateFallbackStrategies, 
+  handleEdgeCases, 
+  suggestImageImprovements,
+  type ProductAnalysisQuality
+} from './product-analysis-helpers';
+
 export interface CompleteAnalysisResult {
   success: boolean;
   productInfo: {
@@ -25,97 +33,81 @@ export interface CompleteAnalysisResult {
   searchStrategy: string;
   processingTime: number;
   error?: string;
+  // Enhanced analysis metadata
+  quality?: ProductAnalysisQuality;
+  edgeCase?: {
+    isEdgeCase: boolean;
+    edgeType: string;
+    suggestion: string;
+  };
+  fallbackStrategies?: Array<{
+    name: string;
+    description: string;
+    keywords: string[];
+    confidence: number;
+  }>;
+  improvements?: string[];
 }
 
 /**
- * Orchestrates the complete product analysis flow:
+ * Orchestrates the complete product analysis flow with enhanced error handling:
  * 1. Analyze image with Google Vision
- * 2. Normalize extracted text
+ * 2. Normalize extracted text  
  * 3. Search eBay for pricing
+ * 4. Assess quality and provide fallback strategies
  */
-export async function analyzeProductComplete(imageBase64: string): Promise<CompleteAnalysisResult> {
+export async function analyzeProductComplete(
+  imageBase64: string, 
+  imageMetadata?: { width?: number; height?: number; fileSize?: number }
+): Promise<CompleteAnalysisResult> {
   const startTime = Date.now();
   
   try {
-    // Step 1: Analyze image
-    const imageAnalysisResponse = await fetch('/api/analyze-image', {
+    // Use the centralized /api/analyze-complete endpoint for better consistency
+    const completeAnalysisResponse = await fetch('/api/analyze-complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: imageBase64 }),
     });
     
-    if (!imageAnalysisResponse.ok) {
-      throw new Error('Image analysis failed');
+    if (!completeAnalysisResponse.ok) {
+      throw new Error(`Analysis failed: ${completeAnalysisResponse.status}`);
     }
     
-    const imageAnalysis: AnalyzeImageResponse = await imageAnalysisResponse.json();
+    const result: CompleteAnalysisResult = await completeAnalysisResponse.json();
     
-    if (!imageAnalysis.success) {
-      throw new Error(imageAnalysis.error || 'Image analysis failed');
-    }
-
-    // Step 2: Normalize extracted text
-    const rawTexts = imageAnalysis.extractedTexts.map(t => t.text);
-    const normalizeResponse = await fetch('/api/product-normalize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        rawText: rawTexts,
-        context: 'product_name'
-      }),
-    });
-    
-    if (!normalizeResponse.ok) {
-      throw new Error('Product normalization failed');
-    }
-    
-    const normalization: ProductNormalizeResponse = await normalizeResponse.json();
-    
-    if (!normalization.success) {
-      throw new Error(normalization.error || 'Product normalization failed');
-    }
-
-    // Step 3: Search eBay for pricing
-    const ebaySearchResponse = await fetch('/api/ebay-search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        keywords: normalization.normalized.searchKeywords,
-        brandName: normalization.normalized.brandName,
-        modelNumber: normalization.normalized.modelNumber,
-        limit: 20,
-      }),
-    });
-    
-    if (!ebaySearchResponse.ok) {
-      throw new Error('eBay search failed');
+    // If analysis was successful, enhance with quality assessment
+    if (result.success && result.productInfo) {
+      const quality = assessAnalysisQuality(
+        result.productInfo.extractedTexts,
+        result.productInfo.normalized.brandName,
+        result.productInfo.normalized.modelNumber,
+        result.productInfo.normalized.searchKeywords
+      );
+      
+      const edgeCase = handleEdgeCases(result.productInfo.extractedTexts, imageMetadata);
+      const improvements = suggestImageImprovements(quality);
+      
+      // Generate fallback strategies if results are poor
+      let fallbackStrategies: any[] = [];
+      if (quality.overallScore < 0.6 || result.pricing.totalFound < 3) {
+        fallbackStrategies = generateFallbackStrategies(
+          result.productInfo.extractedTexts,
+          [], // We don't have labels/objects in this context
+          []
+        );
+      }
+      
+      return {
+        ...result,
+        quality,
+        edgeCase,
+        fallbackStrategies,
+        improvements
+      };
     }
     
-    const ebaySearch: EbaySearchResponse = await ebaySearchResponse.json();
-    
-    if (!ebaySearch.success) {
-      throw new Error(ebaySearch.error || 'eBay search failed');
-    }
-
-    const processingTime = Date.now() - startTime;
-
-    return {
-      success: true,
-      productInfo: {
-        extractedTexts: rawTexts,
-        normalized: normalization.normalized,
-        confidence: Math.min(imageAnalysis.confidence + normalization.normalized.confidence, 1.0) / 2,
-      },
-      pricing: {
-        listings: ebaySearch.listings,
-        averagePrice: ebaySearch.averagePrice,
-        minPrice: ebaySearch.minPrice,
-        maxPrice: ebaySearch.maxPrice,
-        totalFound: ebaySearch.totalFound,
-      },
-      searchStrategy: ebaySearch.searchStrategy,
-      processingTime,
-    };
+    return result;
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
@@ -218,4 +210,69 @@ export function getConfidenceLevel(confidence: number): { level: string; color: 
       description: 'Very low confidence, manual verification recommended',
     };
   }
+}
+
+/**
+ * Retry function for API calls with exponential backoff
+ */
+export async function retryApiCall<T>(
+  apiCall: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: Error;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await apiCall();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown error');
+      
+      // Don't retry on client errors (4xx)
+      if (lastError.message.includes('400') || lastError.message.includes('401') || lastError.message.includes('403')) {
+        throw lastError;
+      }
+      
+      // If this was the last attempt, throw the error
+      if (attempt === maxRetries - 1) {
+        throw lastError;
+      }
+      
+      // Wait with exponential backoff
+      const delay = baseDelay * Math.pow(2, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError!;
+}
+
+/**
+ * Validates image file before processing
+ */
+export function validateImageFile(file: File): { isValid: boolean; error?: string } {
+  // Check file type
+  if (!file.type.startsWith('image/')) {
+    return { isValid: false, error: 'Please select an image file' };
+  }
+  
+  // Check file size (10MB limit)
+  const maxSize = 10 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return { isValid: false, error: 'Image file is too large. Please select a file smaller than 10MB' };
+  }
+  
+  // Check for minimum size
+  const minSize = 1024; // 1KB
+  if (file.size < minSize) {
+    return { isValid: false, error: 'Image file is too small. Please select a valid image file' };
+  }
+  
+  // Check supported formats
+  const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!supportedTypes.includes(file.type)) {
+    return { isValid: false, error: 'Unsupported image format. Please use JPEG, PNG, or WebP' };
+  }
+  
+  return { isValid: true };
 }

@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     // Remove data URL prefix if present
     const base64Image = body.image.replace(/^data:image\/[a-z]+;base64,/, '');
 
-    // Call Google Vision API
+    // Call Google Vision API with comprehensive feature detection
     const visionResponse = await axios.post(
       `https://vision.googleapis.com/v1/images:annotate?key=${config.google.visionApiKey}`,
       {
@@ -44,7 +44,10 @@ export async function POST(request: NextRequest) {
             },
             features: [
               { type: 'TEXT_DETECTION', maxResults: 50 },
-              { type: 'LOGO_DETECTION', maxResults: 10 }
+              { type: 'LOGO_DETECTION', maxResults: 20 },
+              { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
+              { type: 'LABEL_DETECTION', maxResults: 20 },
+              { type: 'PRODUCT_SEARCH', maxResults: 10 }
             ]
           }
         ]
@@ -60,26 +63,38 @@ export async function POST(request: NextRequest) {
       } as AnalyzeImageResponse, { status: 500 });
     }
 
-    // Extract text annotations
+    // Extract all annotations
     const textAnnotations: GoogleVisionTextAnnotation[] = visionResult.textAnnotations || [];
     const logoAnnotations = visionResult.logoAnnotations || [];
+    const objectAnnotations = visionResult.localizedObjectAnnotations || [];
+    const labelAnnotations = visionResult.labelAnnotations || [];
+    const productAnnotations = visionResult.productSearchResults?.results || [];
 
-    // Process extracted texts
-    const extractedTexts: ExtractedText[] = textAnnotations.map((annotation, index) => {
-      // Skip the first annotation as it's usually the full text
-      if (index === 0) {
-        return {
-          text: annotation.description,
-          confidence: 1.0,
-        };
-      }
+    // Process extracted texts with enhanced analysis
+    const extractedTexts: ExtractedText[] = [];
+    
+    // Add the full text as first entry (Google Vision aggregated text)
+    if (textAnnotations.length > 0) {
+      extractedTexts.push({
+        text: textAnnotations[0].description,
+        confidence: 0.95,
+      });
+    }
 
+    // Process individual text segments with product-focused filtering
+    for (let i = 1; i < textAnnotations.length; i++) {
+      const annotation = textAnnotations[i];
+      const text = annotation.description.trim();
+      
+      // Skip very short or irrelevant text
+      if (text.length < 2 || /^[^\w\d]*$/.test(text)) continue;
+      
       // Calculate bounding box
       const vertices = annotation.boundingPoly?.vertices || [];
       let boundingBox;
       if (vertices.length >= 4) {
-        const xs = vertices.map(v => v.x);
-        const ys = vertices.map(v => v.y);
+        const xs = vertices.map(v => v.x || 0);
+        const ys = vertices.map(v => v.y || 0);
         boundingBox = {
           x: Math.min(...xs),
           y: Math.min(...ys),
@@ -88,22 +103,39 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      return {
-        text: annotation.description,
-        confidence: 0.8, // Google Vision doesn't provide confidence for individual words
+      // Prioritize text that looks like product information
+      const productRelevance = calculateTextRelevance(text);
+      
+      extractedTexts.push({
+        text,
+        confidence: 0.8 + (productRelevance * 0.2),
         boundingBox,
-      };
-    });
+      });
+    }
 
-    // Extract product information
+    // Extract product information using multiple data sources
     const allText = extractedTexts.map(t => t.text).join(' ');
-    const productKeywords = extractProductKeywords(allText);
-    const brandName = extractBrandName(allText, logoAnnotations);
+    const productKeywords = extractProductKeywords(allText, labelAnnotations, objectAnnotations);
+    const brandName = extractBrandName(allText, logoAnnotations, labelAnnotations);
     const modelNumber = extractModelNumber(allText);
     const barcode = extractBarcode(allText);
+    
+    // Enhance with object and label detection
+    const detectedObjects = objectAnnotations.map((obj: any) => obj.name).slice(0, 5);
+    const detectedLabels = labelAnnotations
+      .filter((label: any) => label.score > 0.7)
+      .map((label: any) => label.description)
+      .slice(0, 10);
 
-    // Calculate overall confidence based on extracted information
-    const confidence = calculateConfidence(extractedTexts, productKeywords, brandName, modelNumber);
+    // Calculate overall confidence based on all extracted information
+    const confidence = calculateConfidence(
+      extractedTexts, 
+      productKeywords, 
+      brandName, 
+      modelNumber, 
+      detectedObjects,
+      detectedLabels
+    );
 
     const processingTime = Date.now() - startTime;
 
@@ -134,111 +166,310 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function extractProductKeywords(text: string): string[] {
-  // Basic keyword extraction - remove common stop words and extract meaningful terms
+function calculateTextRelevance(text: string): number {
+  const productIndicators = [
+    // Model/part numbers
+    /\b[A-Z]{1,3}[-\s]?\d{3,6}[A-Z]?\b/i,
+    /\b[A-Z]\d{3,6}\b/i,
+    // Brand patterns
+    /\b(apple|samsung|sony|nintendo|microsoft|google|amazon|nike|adidas)\b/i,
+    // Product types
+    /\b(iphone|ipad|macbook|galaxy|pixel|playstation|xbox|switch)\b/i,
+    // Specifications
+    /\b(\d+gb|\d+tb|\d+hz|\d+mp|\d+w|\d+v)\b/i,
+    // Colors/materials
+    /\b(black|white|silver|gold|blue|red|green|aluminum|steel|plastic)\b/i,
+  ];
+
+  let relevance = 0;
+  for (const pattern of productIndicators) {
+    if (pattern.test(text)) {
+      relevance += 0.2;
+    }
+  }
+  
+  return Math.min(relevance, 1.0);
+}
+
+function extractProductKeywords(text: string, labelAnnotations: any[] = [], objectAnnotations: any[] = []): string[] {
+  // Enhanced keyword extraction with multiple data sources
   const stopWords = new Set([
     'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
     'new', 'brand', 'authentic', 'original', 'genuine', 'used', 'condition', 'excellent',
-    'good', 'fair', 'poor', 'size', 'color', 'style', 'model', 'type', 'series'
+    'good', 'fair', 'poor', 'size', 'color', 'style', 'model', 'type', 'series', 'item', 'product'
   ]);
 
-  const words = text.toLowerCase()
+  const keywords = new Set<string>();
+
+  // Extract from text
+  const textWords = text.toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .split(/\s+/)
     .filter(word => word.length > 2 && !stopWords.has(word))
     .filter(word => !/^\d+$/.test(word)); // Remove pure numbers
 
-  // Remove duplicates and return top keywords
-  return [...new Set(words)].slice(0, 10);
+  textWords.forEach(word => keywords.add(word));
+
+  // Add relevant labels from Google Vision
+  labelAnnotations
+    .filter(label => label.score > 0.7)
+    .forEach(label => {
+      const desc = label.description.toLowerCase();
+      if (!stopWords.has(desc) && desc.length > 2) {
+        keywords.add(desc);
+      }
+    });
+
+  // Add detected objects
+  objectAnnotations.forEach(obj => {
+    const name = obj.name.toLowerCase();
+    if (!stopWords.has(name) && name.length > 2) {
+      keywords.add(name);
+    }
+  });
+
+  // Prioritize product-specific keywords
+  const productKeywords = Array.from(keywords).sort((a, b) => {
+    const aRelevance = calculateTextRelevance(a);
+    const bRelevance = calculateTextRelevance(b);
+    return bRelevance - aRelevance;
+  });
+
+  return productKeywords.slice(0, 12);
 }
 
-function extractBrandName(text: string, logoAnnotations: any[]): string | undefined {
-  // Known brand patterns (extend this list)
+function extractBrandName(text: string, logoAnnotations: any[] = [], labelAnnotations: any[] = []): string | undefined {
+  // Comprehensive brand database
   const knownBrands = [
-    'apple', 'samsung', 'sony', 'nintendo', 'microsoft', 'google', 'amazon',
-    'nike', 'adidas', 'canon', 'nikon', 'dell', 'hp', 'lenovo', 'asus',
-    'lg', 'panasonic', 'philips', 'bosch', 'dyson', 'kitchenaid'
+    // Tech brands
+    'apple', 'samsung', 'sony', 'nintendo', 'microsoft', 'google', 'amazon', 'meta', 'facebook',
+    'canon', 'nikon', 'dell', 'hp', 'lenovo', 'asus', 'acer', 'msi', 'razer', 'corsair',
+    'lg', 'panasonic', 'philips', 'bosch', 'dyson', 'kitchenaid', 'cuisinart', 'vitamix',
+    'bose', 'beats', 'sennheiser', 'jbl', 'skullcandy', 'airpods', 'huawei', 'xiaomi',
+    'oneplus', 'motorola', 'oppo', 'vivo', 'realme', 'honor', 'nothing', 'pixel',
+    
+    // Fashion & sports brands
+    'nike', 'adidas', 'puma', 'under armour', 'reebok', 'new balance', 'converse', 'vans',
+    'jordan', 'supreme', 'gucci', 'louis vuitton', 'prada', 'versace', 'armani',
+    
+    // Auto brands
+    'toyota', 'honda', 'ford', 'bmw', 'mercedes', 'audi', 'volkswagen', 'nissan',
+    
+    // Gaming brands
+    'playstation', 'xbox', 'switch', 'steam', 'epic', 'ubisoft', 'ea', 'activision'
   ];
 
-  // Check logo annotations first
-  if (logoAnnotations.length > 0) {
-    return logoAnnotations[0].description;
+  // Check logo annotations first (highest confidence)
+  for (const logo of logoAnnotations) {
+    if (logo.description && logo.score > 0.5) {
+      return formatBrandName(logo.description);
+    }
   }
 
-  // Look for brand names in text
+  // Check labels for brand mentions
+  for (const label of labelAnnotations) {
+    if (label.score > 0.8) {
+      const desc = label.description.toLowerCase();
+      for (const brand of knownBrands) {
+        if (desc.includes(brand)) {
+          return formatBrandName(brand);
+        }
+      }
+    }
+  }
+
+  // Look for brand names in extracted text with context sensitivity
   const lowerText = text.toLowerCase();
-  for (const brand of knownBrands) {
-    if (lowerText.includes(brand)) {
-      return brand.charAt(0).toUpperCase() + brand.slice(1);
+  
+  // Sort brands by length (longer first) to avoid partial matches
+  const sortedBrands = knownBrands.sort((a, b) => b.length - a.length);
+  
+  for (const brand of sortedBrands) {
+    // Use word boundary regex for exact matches
+    const brandRegex = new RegExp(`\\b${brand.replace(/\s/g, '\\s+')}\\b`, 'i');
+    if (brandRegex.test(lowerText)) {
+      return formatBrandName(brand);
+    }
+  }
+
+  // Look for product-specific brand indicators
+  const productBrandPatterns = [
+    { pattern: /\biphone\b/i, brand: 'Apple' },
+    { pattern: /\bipad\b/i, brand: 'Apple' },
+    { pattern: /\bmacbook\b/i, brand: 'Apple' },
+    { pattern: /\bairpods\b/i, brand: 'Apple' },
+    { pattern: /\bgalaxy\b/i, brand: 'Samsung' },
+    { pattern: /\bpixel\b/i, brand: 'Google' },
+    { pattern: /\bsurface\b/i, brand: 'Microsoft' },
+    { pattern: /\bplaystation\b/i, brand: 'Sony' },
+    { pattern: /\bxbox\b/i, brand: 'Microsoft' },
+  ];
+
+  for (const { pattern, brand } of productBrandPatterns) {
+    if (pattern.test(lowerText)) {
+      return brand;
     }
   }
 
   return undefined;
+}
+
+function formatBrandName(brand: string): string {
+  // Handle special cases
+  const specialCases: { [key: string]: string } = {
+    'louis vuitton': 'Louis Vuitton',
+    'under armour': 'Under Armour',
+    'new balance': 'New Balance',
+  };
+
+  const normalized = brand.toLowerCase().trim();
+  
+  if (specialCases[normalized]) {
+    return specialCases[normalized];
+  }
+
+  // Capitalize first letter of each word
+  return normalized.split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 function extractModelNumber(text: string): string | undefined {
-  // Look for patterns that might be model numbers
+  // Enhanced model number patterns for different product types
   const modelPatterns = [
-    /[A-Z]{1,3}[-\s]?\d{3,6}[A-Z]?/g, // e.g., XR-1000, AB123C
-    /\b[A-Z]\d{3,6}\b/g,               // e.g., A1234
-    /\b\d{3,6}[A-Z]{1,3}\b/g,          // e.g., 1234XL
+    // Apple product patterns
+    /\b(A\d{4})\b/g,                          // e.g., A1234 (Apple model numbers)
+    /\b(iPhone\s?\d{1,2}(\s?Pro)?(\s?Max)?)\b/gi, // e.g., iPhone 14 Pro Max
+    /\b(iPad\s?(Pro|Air|Mini)?(\s?\d+)?)\b/gi,     // e.g., iPad Pro 12.9
+    /\b(MacBook\s?(Pro|Air)?(\s?\d+)?)\b/gi,       // e.g., MacBook Pro 16
+    
+    // Samsung Galaxy patterns
+    /\b(Galaxy\s?[A-Z]\d{1,3}(\s?\+?)?)\b/gi,      // e.g., Galaxy S23+
+    /\b(SM-[A-Z]\d{3,4}[A-Z]?)\b/g,               // e.g., SM-G998B
+    
+    // General tech model patterns
+    /\b([A-Z]{1,3}[-\s]?\d{3,6}[A-Z]?)\b/g,       // e.g., XR-1000, AB123C
+    /\b([A-Z]\d{3,6}[A-Z]?)\b/g,                  // e.g., A1234B
+    /\b(\d{3,6}[A-Z]{1,3})\b/g,                   // e.g., 1234XL
+    
+    // Product version patterns
+    /\b(v\d+(\.\d+)?)\b/gi,                       // e.g., v2.1
+    /\b(gen\s?\d+)\b/gi,                          // e.g., Gen 3
+    /\b(generation\s?\d+)\b/gi,                   // e.g., Generation 2
+    
+    // Gaming console patterns
+    /\b(PS[1-5])\b/gi,                            // PlayStation
+    /\b(Xbox\s?(One|Series\s?[SX])?)\b/gi,        // Xbox variants
+    /\b(Switch\s?(Lite|OLED)?)\b/gi,              // Nintendo Switch
   ];
 
+  const foundModels: string[] = [];
+  
   for (const pattern of modelPatterns) {
     const matches = text.match(pattern);
-    if (matches && matches.length > 0) {
-      return matches[0];
+    if (matches) {
+      foundModels.push(...matches);
     }
   }
 
-  return undefined;
+  if (foundModels.length === 0) return undefined;
+
+  // Sort by length (longer model numbers are usually more specific)
+  foundModels.sort((a, b) => b.length - a.length);
+  
+  // Return the most specific model number found
+  return foundModels[0].trim();
 }
 
 function extractBarcode(text: string): string | undefined {
-  // Look for barcode patterns (UPC, EAN, etc.)
+  // Enhanced barcode patterns with validation
   const barcodePatterns = [
-    /\b\d{12,13}\b/g, // UPC/EAN
-    /\b\d{8}\b/g,     // EAN-8
+    /\b(\d{12,14})\b/g,    // UPC-A (12), EAN-13 (13), EAN-14 (14)
+    /\b(\d{8})\b/g,        // EAN-8
+    /\b([0-9]{10,13})\b/g, // ISBN patterns
   ];
+
+  const foundBarcodes: string[] = [];
 
   for (const pattern of barcodePatterns) {
     const matches = text.match(pattern);
-    if (matches && matches.length > 0) {
-      return matches[0];
+    if (matches) {
+      foundBarcodes.push(...matches);
     }
   }
 
-  return undefined;
+  if (foundBarcodes.length === 0) return undefined;
+
+  // Validate and prioritize common barcode lengths
+  const validBarcodes = foundBarcodes.filter(barcode => {
+    const length = barcode.length;
+    return length === 8 || length === 12 || length === 13 || length === 14;
+  });
+
+  if (validBarcodes.length === 0) return foundBarcodes[0];
+
+  // Prioritize by common formats: EAN-13 > UPC-A > EAN-8
+  const prioritized = validBarcodes.sort((a, b) => {
+    const priorities = { 13: 3, 12: 2, 8: 1, 14: 0 };
+    const aPriority = priorities[a.length as keyof typeof priorities] || 0;
+    const bPriority = priorities[b.length as keyof typeof priorities] || 0;
+    return bPriority - aPriority;
+  });
+
+  return prioritized[0];
 }
 
 function calculateConfidence(
   extractedTexts: ExtractedText[], 
   productKeywords: string[], 
   brandName?: string, 
-  modelNumber?: string
+  modelNumber?: string,
+  detectedObjects: string[] = [],
+  detectedLabels: string[] = []
 ): number {
   let confidence = 0;
 
-  // Base confidence from extracted text quality
+  // Base confidence from extracted text quality and quantity
   if (extractedTexts.length > 0) {
     const avgTextConfidence = extractedTexts.reduce((sum, t) => sum + t.confidence, 0) / extractedTexts.length;
-    confidence += avgTextConfidence * 0.4;
+    const textQuantityBonus = Math.min(extractedTexts.length / 20, 0.1); // Bonus for more text found
+    confidence += (avgTextConfidence * 0.3) + textQuantityBonus;
   }
 
-  // Bonus for having product keywords
+  // Enhanced keyword scoring
   if (productKeywords.length > 0) {
-    confidence += Math.min(productKeywords.length / 10, 0.3);
+    const keywordQuality = productKeywords.reduce((sum, keyword) => {
+      return sum + calculateTextRelevance(keyword);
+    }, 0) / productKeywords.length;
+    
+    confidence += Math.min((productKeywords.length / 10) * (0.2 + keywordQuality * 0.1), 0.25);
   }
 
-  // Bonus for brand detection
+  // Brand detection bonus (higher for logo vs text detection)
   if (brandName) {
     confidence += 0.2;
   }
 
-  // Bonus for model number detection
+  // Model number detection bonus
   if (modelNumber) {
-    confidence += 0.1;
+    confidence += 0.15;
   }
 
-  return Math.min(confidence, 1.0);
+  // Object detection bonus (confirms product category)
+  if (detectedObjects.length > 0) {
+    const relevantObjects = detectedObjects.filter(obj => 
+      /phone|tablet|laptop|computer|gaming|device|electronics|appliance/i.test(obj)
+    );
+    if (relevantObjects.length > 0) {
+      confidence += 0.1;
+    }
+  }
+
+  // Label detection bonus (provides context)
+  if (detectedLabels.length > 0) {
+    confidence += Math.min(detectedLabels.length / 20, 0.05);
+  }
+
+  // Ensure confidence is realistic and within bounds
+  return Math.min(Math.max(confidence, 0.1), 0.95);
 }
