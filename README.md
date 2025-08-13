@@ -1,3 +1,36 @@
+## Environment setup
+
+Create an `.env.local` in the project root (not committed). You can copy from the template below:
+
+```
+# eBay Finding API (sold/complete listings)
+# Create at developer.ebay.com → Apps → Create a keyset → Production → App ID
+EBAY_APP_ID=
+
+# eBay Browse API (active listings) – requires OAuth client credentials
+# From developer.ebay.com → Apps → Your keyset → REST (OAuth) credentials
+EBAY_CLIENT_ID=
+EBAY_CLIENT_SECRET=
+
+# Default marketplace and currency
+MARKETPLACE_ID=EBAY_US
+CURRENCY=USD
+
+# Google Cloud Vision (optional, for non-barcode flow)
+# In Google Cloud Console: enable Vision API and create an API key OR a service account
+GOOGLE_VISION_API_KEY=
+
+# OpenAI (optional, for normalization fallback)
+OPENAI_API_KEY=
+```
+
+### Where to get keys
+- eBay developer account: `https://developer.ebay.com/` → Sign in → Developer Program → Apps → Create a keyset.
+  - For sold comps (Finding API): use the App ID from the Production keyset.
+  - For active listings (Browse API): use the REST credentials (Client ID/Client Secret). You must request production access to the Browse API if your account is new.
+- Google Cloud Vision: `https://console.cloud.google.com/` → Create a project → Enable Vision API → Create credentials (API key or service account JSON).
+- OpenAI: `https://platform.openai.com/api-keys` → Create a new secret key (only needed if you enable LLM normalization).
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
