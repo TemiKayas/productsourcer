@@ -2,13 +2,24 @@
 
 ## MVP Core Features
 ### Photo Upload
-- [ ] Create simple file upload component
-- [ ] Accept image files (JPG, PNG, WebP)
-- [ ] Add drag-and-drop upload area
-- [ ] Show image preview after upload
-- [ ] Add basic image validation (size, format)
+- [x] Create simple file upload component
+- [x] Accept image files (JPG, PNG, WebP)
+- [x] Add drag-and-drop upload area
+- [x] Show image preview after upload
+- [x] Add basic image validation (size, format)
 
-### Product Recognition (Google Lens-like)
+### API Infrastructure (Google Lens Backend)
+**📋 See docs/API.md for complete API documentation and examples**
+- [x] Create `/api/analyze-image` endpoint for Google Vision API integration
+- [x] Create `/api/product-normalize` endpoint for text processing and normalization
+- [x] Create `/api/ebay-search` endpoint for eBay Finding API integration
+- [x] Create `/api/analyze-complete` endpoint for full pipeline orchestration
+- [x] Set up environment variable validation and configuration (lib/env.ts)
+- [x] Create comprehensive TypeScript types for all API interactions (types/api.ts)
+- [x] Create utility functions for frontend integration (lib/product-analysis.ts)
+- [x] Install `axios` for API calls
+
+### Product Recognition (Google Lens-like) - Implementation Needed
 - [ ] Send uploaded image to Google Vision API
 - [ ] Extract text from product labels/packaging
 - [ ] Detect product logos and brand names
@@ -29,7 +40,7 @@
   - [ ] Text in foreign languages
   - [ ] Handwritten text vs printed text
 
-### eBay Price Lookup
+### eBay Price Lookup - Implementation Needed
 - [ ] Use extracted product text to search eBay Finding API
 - [ ] Implement multiple search strategies:
   - [ ] Search for completed/sold listings
@@ -42,7 +53,9 @@
 - [ ] Show basic pricing stats
 - [ ] Handle cases where no eBay results found
 
-### Simple Results Display
+### Frontend Integration - Next Steps
+- [ ] Connect PhotoUpload component to API endpoints
+- [ ] Integrate `/api/analyze-complete` endpoint into handleAnalyze function
 - [ ] Show identified product name and confidence level
 - [ ] Display extracted text for transparency
 - [ ] Show average price prominently
@@ -54,15 +67,17 @@
 
 ## Technical Setup
 ### Dependencies
-- [ ] Install `axios` for API calls
+- [x] Install `axios` for API calls
 - [x] Install `lucide-react` for icons
 - [x] Add basic error handling
 
-### API Routes
-- [ ] Create `/api/analyze-image` endpoint
-- [ ] Create `/api/ebay-search` endpoint
-- [ ] Create `/api/product-normalize` endpoint for text processing
-- [ ] Set up environment variables for API keys
+### API Routes - COMPLETED ✅
+**📋 Reference: docs/API.md for implementation details**
+- [x] Create `/api/analyze-image` endpoint
+- [x] Create `/api/ebay-search` endpoint  
+- [x] Create `/api/product-normalize` endpoint for text processing
+- [x] Create `/api/analyze-complete` endpoint for full pipeline
+- [x] Set up environment variables for API keys
 
 ### Basic UI
 - [x] Replace default Next.js page with upload interface
@@ -71,6 +86,8 @@
 - [x] Add basic loading and error states
 
 ## MVP Polish
+- [ ] Set up API keys in .env.local (see README.md for template)
+- [ ] Test API endpoints with sample images
 - [ ] Add retry functionality if image analysis fails
 - [ ] Show "no results found" state with suggestions
 - [ ] Add basic input validation
