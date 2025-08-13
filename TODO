@@ -2,11 +2,11 @@
 
 ## MVP Core Features
 ### Photo Upload
-- [x] Create simple file upload component
-- [x] Accept image files (JPG, PNG, WebP)
-- [x] Add drag-and-drop upload area
-- [x] Show image preview after upload
-- [x] Add basic image validation (size, format)
+- [ ] Create simple file upload component
+- [ ] Accept image files (JPG, PNG, WebP)
+- [ ] Add drag-and-drop upload area
+- [ ] Show image preview after upload
+- [ ] Add basic image validation (size, format)
 
 ### Product Recognition (Google Lens-like)
 - [ ] Send uploaded image to Google Vision API

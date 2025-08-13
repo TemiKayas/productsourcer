@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { Upload, X, Image as ImageIcon } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Upload, X } from 'lucide-react';
 
 interface PhotoUploadProps {
-  onImageUpload: (file: File) => void;
+  onImageUpload: (file: File, previewUrl: string) => void;
   onImageRemove: () => void;
   uploadedImage?: File | null;
   imagePreview?: string | null;
@@ -22,114 +22,114 @@ export default function PhotoUpload({
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validateFile = (file: File): boolean => {
+  // Simple file validation
+  const validateFile = (file: File): string | null => {
     // Check file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setError('Please upload a valid image file (JPG, PNG, or WebP)');
-      return false;
+      return 'Please upload a JPG, PNG, or WebP image';
     }
 
     // Check file size (5MB limit)
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      setError('File size must be less than 5MB');
-      return false;
+      return 'File must be smaller than 5MB';
     }
 
-    setError(null);
-    return true;
+    return null;
   };
 
-  const handleFileSelect = useCallback((file: File) => {
-    if (validateFile(file)) {
-      onImageUpload(file);
+  const processFile = (file: File) => {
+    setError(null);
+    
+    const validationError = validateFile(file);
+    if (validationError) {
+      setError(validationError);
+      return;
     }
-  }, [onImageUpload]);
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    onImageUpload(file, previewUrl);
+  };
+
+  // Drag and drop handlers
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0]);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      processFile(file);
     }
-  }, [handleFileSelect]);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-  }, []);
+  };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileSelect(files[0]);
+  // File input handler
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
     }
   };
 
   const handleClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleRemove = () => {
-    onImageRemove();
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    if (!isLoading) {
+      fileInputRef.current?.click();
     }
   };
 
-  if (imagePreview && uploadedImage) {
+  const handleRemove = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    onImageRemove();
+    setError(null);
+  };
+
+  // Show preview if image is uploaded
+  if (uploadedImage && imagePreview) {
     return (
       <div className="w-full max-w-md mx-auto">
-        <div className="relative group">
-          <div className="w-full h-64 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
+        <div className="relative">
+          <div className="w-full h-64 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50">
             <img
               src={imagePreview}
-              alt="Uploaded product"
-              className="max-w-full max-h-full object-contain"
-              style={{ 
-                backgroundColor: 'transparent',
-                display: 'block'
-              }}
-              onError={(e) => {
-                console.error('Image failed to load:', imagePreview);
-                setError('Failed to display image preview. Please try uploading again.');
-              }}
-              onLoad={(e) => {
-                console.log('Image loaded successfully');
-                setError(null); // Clear any previous errors
-              }}
+              alt="Product preview"
+              className="w-full h-full object-contain"
             />
           </div>
-          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center pointer-events-none">
-            <button
-              onClick={handleRemove}
-              className="opacity-0 group-hover:opacity-100 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-all duration-200 pointer-events-auto"
-              disabled={isLoading}
-              title="Remove image"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-        <div className="mt-4 text-center">
-          <div className="text-sm text-gray-700 font-medium">
-            {uploadedImage.name}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            {uploadedImage.type} • {(uploadedImage.size / 1024 / 1024).toFixed(2)} MB
-          </div>
+          
+          {/* Remove button */}
+          <button
+            onClick={handleRemove}
+            disabled={isLoading}
+            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full disabled:opacity-50"
+            title="Remove image"
+          >
+            <X size={16} />
+          </button>
         </div>
         
+        {/* File info */}
+        <div className="mt-3 text-center">
+          <p className="text-sm text-gray-600 font-medium">{uploadedImage.name}</p>
+          <p className="text-xs text-gray-400">
+            {(uploadedImage.size / 1024 / 1024).toFixed(1)} MB
+          </p>
+        </div>
+
         {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-sm text-red-600">{error}</p>
           </div>
         )}
@@ -137,13 +137,14 @@ export default function PhotoUpload({
     );
   }
 
+  // Show upload area
   return (
     <div className="w-full max-w-md mx-auto">
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/jpg,image/png,image/webp"
-        onChange={handleFileInputChange}
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleFileSelect}
         className="hidden"
         disabled={isLoading}
       />
@@ -154,7 +155,7 @@ export default function PhotoUpload({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={`
-          relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all duration-200
+          border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
           ${isDragOver 
             ? 'border-blue-500 bg-blue-50' 
             : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
@@ -162,26 +163,23 @@ export default function PhotoUpload({
           ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
         `}
       >
-        <div className="flex flex-col items-center space-y-4">
+        <div className="flex flex-col items-center space-y-3">
           {isLoading ? (
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
           ) : (
             <>
-              <div className={`
-                p-4 rounded-full
-                ${isDragOver ? 'bg-blue-100' : 'bg-gray-100'}
-              `}>
-                <Upload size={32} className={isDragOver ? 'text-blue-500' : 'text-gray-400'} />
+              <div className={`p-3 rounded-full ${isDragOver ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                <Upload size={24} className={isDragOver ? 'text-blue-500' : 'text-gray-400'} />
               </div>
               <div>
-                <p className="text-lg font-medium text-gray-700">
-                  {isDragOver ? 'Drop your image here' : 'Upload a product photo'}
+                <p className="font-medium text-gray-700">
+                  {isDragOver ? 'Drop image here' : 'Upload product photo'}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
-                  Drag and drop or click to browse
+                  Click to browse or drag and drop
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
-                  Supports JPG, PNG, WebP (max 5MB)
+                <p className="text-xs text-gray-400 mt-1">
+                  JPG, PNG, WebP up to 5MB
                 </p>
               </div>
             </>
@@ -190,7 +188,7 @@ export default function PhotoUpload({
       </div>
 
       {error && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}

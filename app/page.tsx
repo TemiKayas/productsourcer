@@ -11,63 +11,22 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleImageUpload = (file: File) => {
-    console.log('Processing uploaded file:', {
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      lastModified: new Date(file.lastModified).toISOString()
-    });
-
-    // Store the file for future API calls
+  const handleImageUpload = (file: File, previewUrl: string) => {
+    console.log('File uploaded:', file.name, file.type, (file.size / 1024 / 1024).toFixed(1) + 'MB');
+    
     setUploadedImage(file);
+    setImagePreview(previewUrl);
     setError(null);
-
-    // Create image preview using FileReader for reliable data URL
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      
-      // Validate that we got a proper data URL
-      if (result && result.startsWith('data:image/')) {
-        console.log('Successfully created image preview');
-        setImagePreview(result);
-      } else {
-        console.error('Invalid data URL generated:', result?.substring(0, 50));
-        setError('Failed to create image preview');
-      }
-    };
-    
-    reader.onerror = (error) => {
-      console.error('FileReader error:', error);
-      setError('Failed to read image file');
-      
-      // Try fallback with object URL
-      try {
-        const objectUrl = URL.createObjectURL(file);
-        setImagePreview(objectUrl);
-        console.log('Using fallback object URL');
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-        setError('Unable to display image preview');
-      }
-    };
-    
-    // Read file as data URL for reliable cross-browser compatibility
-    reader.readAsDataURL(file);
   };
 
   const handleImageRemove = () => {
     console.log('Removing uploaded image');
     
-    // Clean up the image preview URL if it's an object URL
+    // Clean up the image preview URL
     if (imagePreview && imagePreview.startsWith('blob:')) {
       URL.revokeObjectURL(imagePreview);
-      console.log('Revoked object URL');
     }
     
-    // Reset all image-related state
     setUploadedImage(null);
     setImagePreview(null);
     setError(null);
