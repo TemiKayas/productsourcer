@@ -1,0 +1,88 @@
+# ProductSource - Simple MVP TODO
+
+## MVP Core Features
+### Photo Upload
+- [x] Create simple file upload component
+- [x] Accept image files (JPG, PNG, WebP)
+- [x] Add drag-and-drop upload area
+- [x] Show image preview after upload
+- [x] Add basic image validation (size, format)
+
+### Product Recognition (Google Lens-like)
+- [ ] Send uploaded image to Google Vision API
+- [ ] Extract text from product labels/packaging
+- [ ] Detect product logos and brand names
+- [ ] Identify barcodes and QR codes if present
+- [ ] Extract product names, descriptions, and specifications
+- [ ] Handle multiple text regions and prioritize product info
+- [ ] Create product name normalization and cleaning
+- [ ] Generate multiple search keywords from extracted text
+- [ ] Implement fallback search strategies:
+  - [ ] Try exact product name first
+  - [ ] Fallback to brand + generic product type
+  - [ ] Use partial text matching for obscure products
+  - [ ] Remove common words that don't help search (e.g., "new", "brand", "authentic")
+- [ ] Handle edge cases:
+  - [ ] No text found in image
+  - [ ] Poor image quality
+  - [ ] Multiple products in one image
+  - [ ] Text in foreign languages
+  - [ ] Handwritten text vs printed text
+
+### eBay Price Lookup
+- [ ] Use extracted product text to search eBay Finding API
+- [ ] Implement multiple search strategies:
+  - [ ] Search for completed/sold listings
+  - [ ] Try different keyword combinations
+  - [ ] Search with and without brand names
+  - [ ] Use product model numbers if available
+- [ ] Get 10-20 recent sold items
+- [ ] Filter results by relevance and recency
+- [ ] Calculate average, min, max prices
+- [ ] Show basic pricing stats
+- [ ] Handle cases where no eBay results found
+
+### Simple Results Display
+- [ ] Show identified product name and confidence level
+- [ ] Display extracted text for transparency
+- [ ] Show average price prominently
+- [ ] List a few sample sold listings with details
+- [ ] Add "Search on eBay" button with pre-filled search
+- [ ] Show loading states during processing
+- [ ] Display search strategy used (exact match, partial match, etc.)
+- [ ] Show "Try different search" option if results are poor
+
+## Technical Setup
+### Dependencies
+- [ ] Install `axios` for API calls
+- [x] Install `lucide-react` for icons
+- [x] Add basic error handling
+
+### API Routes
+- [ ] Create `/api/analyze-image` endpoint
+- [ ] Create `/api/ebay-search` endpoint
+- [ ] Create `/api/product-normalize` endpoint for text processing
+- [ ] Set up environment variables for API keys
+
+### Basic UI
+- [x] Replace default Next.js page with upload interface
+- [x] Create simple, clean design
+- [x] Make it mobile-friendly
+- [x] Add basic loading and error states
+
+## MVP Polish
+- [ ] Add retry functionality if image analysis fails
+- [ ] Show "no results found" state with suggestions
+- [ ] Add basic input validation
+- [ ] Implement image quality assessment
+- [ ] Add manual text input as fallback
+- [ ] Test on mobile devices
+- [ ] Deploy to Vercel
+
+## Future Enhancements (Post-MVP)
+- [ ] Camera capture instead of just upload
+- [ ] Multiple marketplace support
+- [ ] Price history charts
+- [ ] User accounts and search history
+- [ ] Barcode scanning
+- [ ] More detailed product information

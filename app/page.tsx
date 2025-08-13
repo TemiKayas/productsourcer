@@ -1,103 +1,210 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import PhotoUpload from './components/PhotoUpload';
+
+import { Camera, Search } from 'lucide-react';
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleImageUpload = (file: File) => {
+    console.log('Processing uploaded file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      lastModified: new Date(file.lastModified).toISOString()
+    });
+
+    // Store the file for future API calls
+    setUploadedImage(file);
+    setError(null);
+
+    // Create image preview using FileReader for reliable data URL
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      
+      // Validate that we got a proper data URL
+      if (result && result.startsWith('data:image/')) {
+        console.log('Successfully created image preview');
+        setImagePreview(result);
+      } else {
+        console.error('Invalid data URL generated:', result?.substring(0, 50));
+        setError('Failed to create image preview');
+      }
+    };
+    
+    reader.onerror = (error) => {
+      console.error('FileReader error:', error);
+      setError('Failed to read image file');
+      
+      // Try fallback with object URL
+      try {
+        const objectUrl = URL.createObjectURL(file);
+        setImagePreview(objectUrl);
+        console.log('Using fallback object URL');
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        setError('Unable to display image preview');
+      }
+    };
+    
+    // Read file as data URL for reliable cross-browser compatibility
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageRemove = () => {
+    console.log('Removing uploaded image');
+    
+    // Clean up the image preview URL if it's an object URL
+    if (imagePreview && imagePreview.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreview);
+      console.log('Revoked object URL');
+    }
+    
+    // Reset all image-related state
+    setUploadedImage(null);
+    setImagePreview(null);
+    setError(null);
+    setIsAnalyzing(false);
+  };
+
+  const handleAnalyze = async () => {
+    if (!uploadedImage) {
+      setError('No image selected for analysis');
+      return;
+    }
+    
+    console.log('Starting image analysis for:', uploadedImage.name);
+    setIsAnalyzing(true);
+    setError(null);
+    
+    try {
+      // TODO: Implement actual image analysis
+      // This will be connected to:
+      // 1. Google Vision API for text extraction
+      // 2. eBay Finding API for price lookup
+      // 3. Product normalization logic
+      
+      // For now, simulate the analysis process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log('Analysis complete (simulated)');
+      
+      // TODO: Process results and display pricing information
+      
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      setError('Failed to analyze image. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <div className="flex items-center justify-center mb-4">
+            <Camera className="w-8 h-8 text-blue-600 mr-3" />
+            <h1 className="text-4xl font-bold text-gray-900">ProductSource</h1>
+          </div>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Take a photo of any product and discover its market value on eBay
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        {/* Main Content */}
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-2">
+                Upload Product Photo
+              </h2>
+              <p className="text-gray-600">
+                Get instant pricing insights from eBay sold listings
+              </p>
+            </div>
+
+            <PhotoUpload
+              onImageUpload={handleImageUpload}
+              onImageRemove={handleImageRemove}
+              uploadedImage={uploadedImage}
+              imagePreview={imagePreview}
+              isLoading={isAnalyzing}
+            />
+
+            {error && (
+              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600 text-center">{error}</p>
+              </div>
+            )}
+
+            {uploadedImage && !isAnalyzing && (
+              <div className="mt-8 text-center">
+                <button
+                  onClick={handleAnalyze}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg transition-colors duration-200 flex items-center justify-center mx-auto space-x-2"
+                >
+                  <Search size={20} />
+                  <span>Analyze Product</span>
+                </button>
+              </div>
+            )}
+
+            {isAnalyzing && (
+              <div className="mt-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Analyzing your product...</p>
+              </div>
+            )}
+          </div>
+
+
+
+          {/* How it works section */}
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <h3 className="text-2xl font-semibold text-gray-800 mb-6 text-center">
+              How it works
+            </h3>
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="text-center">
+                <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Camera className="w-8 h-8 text-blue-600" />
+                </div>
+                <h4 className="font-semibold text-gray-800 mb-2">1. Take a Photo</h4>
+                <p className="text-gray-600 text-sm">
+                  Upload a clear photo of the product you want to price check
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Search className="w-8 h-8 text-green-600" />
+                </div>
+                <h4 className="font-semibold text-gray-800 mb-2">2. AI Analysis</h4>
+                <p className="text-gray-600 text-sm">
+                  Our AI extracts product details and searches eBay sold listings
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-2xl font-bold text-purple-600">$</span>
+                </div>
+                <h4 className="font-semibold text-gray-800 mb-2">3. Get Pricing</h4>
+                <p className="text-gray-600 text-sm">
+                  See average prices, recent sales, and market trends
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
