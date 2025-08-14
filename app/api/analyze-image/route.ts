@@ -12,12 +12,31 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    const config = getConfig();
+    const config = getConfig(['google']);
     
     if (!config.google.visionApiKey) {
       return NextResponse.json({
         success: false,
-        error: 'Google Vision API key not configured'
+        error: 'Google Vision API key not configured',
+        extractedTexts: [],
+        productKeywords: [],
+        detectedLogos: [],
+        confidence: 0,
+        confidenceLevel: 'low' as const,
+        qualityAssessment: {
+          textQuality: 'low' as const,
+          brandDetected: false,
+          modelDetected: false,
+          keywordQuality: 'low' as const,
+          overallScore: 0,
+          issues: ['Google Vision API key not configured'],
+          suggestions: ['Configure Google Vision API key in environment variables'],
+        },
+        fallbackStrategies: [],
+        detectedObjects: [],
+        detectedLabels: [],
+        edgeCases: ['api_key_missing'],
+        processingTime: Date.now() - startTime,
       } as AnalyzeImageResponse, { status: 500 });
     }
 
@@ -26,7 +45,26 @@ export async function POST(request: NextRequest) {
     if (!body.image) {
       return NextResponse.json({
         success: false,
-        error: 'No image data provided'
+        error: 'No image data provided',
+        extractedTexts: [],
+        productKeywords: [],
+        detectedLogos: [],
+        confidence: 0,
+        confidenceLevel: 'low' as const,
+        qualityAssessment: {
+          textQuality: 'low' as const,
+          brandDetected: false,
+          modelDetected: false,
+          keywordQuality: 'low' as const,
+          overallScore: 0,
+          issues: ['No image data provided'],
+          suggestions: ['Please provide a valid base64 encoded image'],
+        },
+        fallbackStrategies: [],
+        detectedObjects: [],
+        detectedLabels: [],
+        edgeCases: ['no_image_data'],
+        processingTime: Date.now() - startTime,
       } as AnalyzeImageResponse, { status: 400 });
     }
 
@@ -59,7 +97,26 @@ export async function POST(request: NextRequest) {
     if (visionResult.error) {
       return NextResponse.json({
         success: false,
-        error: `Vision API error: ${visionResult.error.message}`
+        error: `Vision API error: ${visionResult.error.message}`,
+        extractedTexts: [],
+        productKeywords: [],
+        detectedLogos: [],
+        confidence: 0,
+        confidenceLevel: 'low' as const,
+        qualityAssessment: {
+          textQuality: 'low' as const,
+          brandDetected: false,
+          modelDetected: false,
+          keywordQuality: 'low' as const,
+          overallScore: 0,
+          issues: [`Vision API error: ${visionResult.error.message}`],
+          suggestions: ['Check image format and try again'],
+        },
+        fallbackStrategies: [],
+        detectedObjects: [],
+        detectedLabels: [],
+        edgeCases: ['vision_api_error'],
+        processingTime: Date.now() - startTime,
       } as AnalyzeImageResponse, { status: 500 });
     }
 
@@ -139,6 +196,46 @@ export async function POST(request: NextRequest) {
 
     const processingTime = Date.now() - startTime;
 
+    // Create detected logos array from logo annotations
+    const detectedLogos = logoAnnotations.map((logo: any) => ({
+      description: logo.description,
+      confidence: logo.score,
+      brandName: brandName && logo.description.toLowerCase().includes(brandName.toLowerCase()) ? brandName : undefined,
+    }));
+
+    // Calculate confidence level
+    const confidenceLevel = confidence >= 0.8 ? 'high' : confidence >= 0.5 ? 'medium' : 'low';
+
+    // Create quality assessment
+    const qualityAssessment = {
+      textQuality: extractedTexts.length > 5 ? 'high' : extractedTexts.length > 2 ? 'medium' : 'low',
+      brandDetected: !!brandName,
+      modelDetected: !!modelNumber,
+      keywordQuality: productKeywords.length > 5 ? 'high' : productKeywords.length > 2 ? 'medium' : 'low',
+      overallScore: confidence,
+      issues: [] as string[],
+      suggestions: [] as string[],
+    };
+
+    // Add quality issues and suggestions
+    if (extractedTexts.length === 0) {
+      qualityAssessment.issues.push('No text detected in image');
+      qualityAssessment.suggestions.push('Ensure the image contains clear, readable text');
+    }
+    if (!brandName) {
+      qualityAssessment.suggestions.push('Try capturing the brand name or logo more clearly');
+    }
+    if (confidence < 0.5) {
+      qualityAssessment.issues.push('Low confidence in text recognition');
+      qualityAssessment.suggestions.push('Use better lighting and higher resolution image');
+    }
+
+    // Detect edge cases
+    const edgeCases = [];
+    if (extractedTexts.length === 0) edgeCases.push('no_text_found');
+    if (confidence < 0.3) edgeCases.push('poor_image_quality');
+    if (productKeywords.length === 0) edgeCases.push('no_product_keywords');
+
     return NextResponse.json({
       success: true,
       extractedTexts,
@@ -146,7 +243,14 @@ export async function POST(request: NextRequest) {
       brandName,
       modelNumber,
       barcode,
+      detectedLogos,
       confidence,
+      confidenceLevel,
+      qualityAssessment,
+      fallbackStrategies: [], // Could be populated by helper functions if needed
+      detectedObjects,
+      detectedLabels,
+      edgeCases,
       processingTime,
     } as AnalyzeImageResponse);
 
@@ -160,7 +264,22 @@ export async function POST(request: NextRequest) {
       error: error instanceof Error ? error.message : 'Unknown error occurred',
       extractedTexts: [],
       productKeywords: [],
+      detectedLogos: [],
       confidence: 0,
+      confidenceLevel: 'low' as const,
+      qualityAssessment: {
+        textQuality: 'low' as const,
+        brandDetected: false,
+        modelDetected: false,
+        keywordQuality: 'low' as const,
+        overallScore: 0,
+        issues: ['Processing failed'],
+        suggestions: ['Please try again with a clearer image'],
+      },
+      fallbackStrategies: [],
+      detectedObjects: [],
+      detectedLabels: [],
+      edgeCases: [],
       processingTime,
     } as AnalyzeImageResponse, { status: 500 });
   }

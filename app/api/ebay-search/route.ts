@@ -10,7 +10,7 @@ import type {
 
 export async function POST(request: NextRequest) {
   try {
-    const config = getConfig();
+    const config = getConfig(['ebay']);
     const body: EbaySearchRequest = await request.json();
     
     if (!body.keywords || body.keywords.length === 0) {

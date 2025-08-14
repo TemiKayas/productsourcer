@@ -20,8 +20,11 @@ export async function POST(request: NextRequest) {
       } as CompleteAnalysisResult, { status: 400 });
     }
 
-    // Validate image data format
-    if (!body.image.startsWith('data:image/')) {
+    // Validate image data format - accept both data URL and raw base64
+    const isDataUrl = body.image.startsWith('data:image/');
+    const isBase64 = !isDataUrl && /^[A-Za-z0-9+/=]+$/.test(body.image);
+    
+    if (!isDataUrl && !isBase64) {
       return NextResponse.json({
         success: false,
         error: 'Invalid image format. Please provide a base64 encoded image.'
@@ -32,10 +35,14 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Analyze image with Google Vision
     console.log('Step 1: Analyzing image with Google Vision API...');
+    
+    // Ensure image data is in the format expected by analyze-image endpoint
+    const imageData = isDataUrl ? body.image : `data:image/jpeg;base64,${body.image}`;
+    
     const imageAnalysisResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/analyze-image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: body.image }),
+      body: JSON.stringify({ image: imageData }),
     });
     
     if (!imageAnalysisResponse.ok) {
@@ -134,24 +141,36 @@ export async function POST(request: NextRequest) {
 
     // Handle edge case: no search keywords found
     if (!normalization.normalized.searchKeywords || normalization.normalized.searchKeywords.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Unable to identify product information for price lookup. The image may not contain clear product details.',
-        productInfo: {
-          extractedTexts: rawTexts,
-          normalized: normalization.normalized,
-          confidence: normalization.normalized.confidence,
-        },
-        pricing: {
-          listings: [],
-          averagePrice: 0,
-          minPrice: 0,
-          maxPrice: 0,
-          totalFound: 0,
-        },
-        searchStrategy: 'no_search_keywords',
-        processingTime: Date.now() - startTime,
-      } as CompleteAnalysisResult, { status: 200 });
+      // Check if we have any barcode or numeric identifier that we can try to search with
+      const hasBarcode = rawTexts.some(text => /\b\d{8,14}\b/.test(text));
+      
+      if (!hasBarcode) {
+        return NextResponse.json({
+          success: false,
+          error: 'Unable to identify product information for price lookup. The image may not contain clear product details.',
+          productInfo: {
+            extractedTexts: rawTexts,
+            normalized: normalization.normalized,
+            confidence: normalization.normalized.confidence,
+          },
+          pricing: {
+            listings: [],
+            averagePrice: 0,
+            minPrice: 0,
+            maxPrice: 0,
+            totalFound: 0,
+          },
+          searchStrategy: 'no_search_keywords',
+          processingTime: Date.now() - startTime,
+        } as CompleteAnalysisResult, { status: 200 });
+      }
+      
+      // If we have a barcode but no keywords, try to use just the extracted text for search
+      console.log('No keywords found but barcode detected. Attempting barcode-based search...');
+      const barcodeKeywords = rawTexts.filter(text => /\b\d{8,14}\b/.test(text));
+      if (barcodeKeywords.length > 0) {
+        normalization.normalized.searchKeywords = [barcodeKeywords[0].match(/\b\d{8,14}\b/)?.[0] || barcodeKeywords[0]];
+      }
     }
 
     // Step 3: Search eBay for pricing

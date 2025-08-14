@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Try AI-based normalization as fallback (if OpenAI key is available)
-    const config = getConfig();
+    const config = getConfig([]);
     if (config.openai.apiKey) {
       try {
         const aiResult = await normalizeWithAI(body.rawText, body.context, config.openai.apiKey);
@@ -386,6 +386,25 @@ function generateSearchKeywords(rawTexts: string[], brandName?: string, modelNum
     const words = extractDescriptiveWords(text);
     words.forEach(word => keywords.add(word));
   });
+  
+  // If we have very few keywords, try to extract some fallback terms
+  if (keywords.size < 2) {
+    // Look for potential barcodes or product codes as fallback
+    const allText = rawTexts.join(' ');
+    const barcodeMatches = allText.match(/\b\d{8,14}\b/g);
+    if (barcodeMatches) {
+      // Use the barcode as a keyword if we have nothing else
+      keywords.add(barcodeMatches[0]);
+    }
+    
+    // Add any words that weren't completely filtered out
+    const fallbackWords = allText.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 1 && word.length < 20); // More lenient filtering
+    
+    fallbackWords.slice(0, 3).forEach(word => keywords.add(word));
+  }
   
   return Array.from(keywords).slice(0, 8);
 }
